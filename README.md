@@ -19,5 +19,5 @@ The colours/states are
 
 fe1 ~$ pstat <partition>
 
-![pstat image](./master/pstat.png)
+![pstat image](./pstat.png)
 
