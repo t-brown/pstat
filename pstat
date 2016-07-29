@@ -1,0 +1,282 @@
+#!/usr/bin/env python
+#
+# Script to visually display a partition 
+# node states.
+#
+# make `mdiag -n -t xjet` pretty
+
+from __future__ import print_function
+
+import sys
+import os
+import subprocess
+import re
+import operator
+import curses
+import time
+
+def main():
+
+    #os.environ["NCURSES_NO_UTF8_ACS"] = "1"
+
+    # Process the command line arguments
+    partitions = parse_args()
+
+    # set up curses
+    stdscr = sinit()
+    pad = curses.newpad(curses.LINES * 2, curses.COLS)
+    pad.timeout(1000)
+    pos = 0
+    page  = curses.LINES / 2
+    max_y = curses.LINES - 1
+    max_x = curses.COLS  - 1
+
+    if partitions is None:
+        pis = pinfo()
+    else:
+        pis = []
+        for p in partitions:
+            pis.append(pinfo(p))
+
+    display(pad, pis)
+
+    while True:
+        pad.refresh(pos, 0, 0, 0, max_y, max_x)
+        key = stdscr.getch()
+        if key == ord('q'):
+            break
+        elif key == curses.KEY_DOWN:
+            pos += 1
+            pad.refresh(pos, 0, 0, 0, max_y, max_x)
+        elif key == curses.KEY_UP:
+            pos -= 1
+            pad.refresh(pos, 0, 0, 0, max_y, max_x)
+        elif key == curses.KEY_NPAGE:
+            pos += page
+            pad.refresh(pos, 0, 0, 0, max_y, max_x)
+        elif key == curses.KEY_PPAGE:
+            pos -= page
+            pad.refresh(pos, 0, 0, 0, max_y, max_x)
+        display(pad, pis)
+
+    sfini()
+
+def parse_args():
+
+    if len(sys.argv) > 1:
+        partitions = sys.argv[1:]
+        return partitions
+    else:
+        return None
+
+def sinit():
+    stdscr = curses.initscr()
+    curses.noecho()
+    curses.cbreak()
+    curses.curs_set(0)
+
+    # set up colors
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, 0, curses.COLOR_BLUE)
+    curses.init_pair(2, 0, curses.COLOR_CYAN)
+    curses.init_pair(3, 0, curses.COLOR_GREEN)
+    curses.init_pair(4, 0, curses.COLOR_MAGENTA)
+    curses.init_pair(5, 0, curses.COLOR_RED)
+    curses.init_pair(6, 0, curses.COLOR_YELLOW)
+    curses.init_pair(7, 0, curses.COLOR_BLACK)
+    curses.init_pair(8, 0, curses.COLOR_WHITE)
+
+    stdscr.keypad(1)
+    #stdscr.nodelay(1)
+    stdscr.erase()
+    stdscr.refresh()
+
+    return stdscr
+
+def sfini():
+    # tear down curses
+    curses.nocbreak()
+    curses.echo()
+    curses.endwin()
+
+
+def pinfo(partition=None):
+
+    cmd    = ["mdiag", "-P"]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    out, err = p.communicate()
+
+    info = {}
+    begin = re.compile('Nodes ----')
+    end   = re.compile('^$')
+    part  = re.compile('(?P<partition>\S+)\s+(?P<nodes>\d+)\s+(?P<up>\d+)')
+    seen  = 0
+    nodes = 0
+    for line in out.splitlines():
+        mb = begin.match(line)
+        if mb:
+            seen = 1
+        if seen:
+            mp = part.match(line)
+            if mp:
+                if mp.group('partition') != 'ALL':
+                    info[mp.group('partition')] = {
+                        'nodes': int(mp.group('nodes')),
+                        'up':    int(mp.group('up'))
+                        }
+        me = end.match(line)
+        if seen and me:
+            break
+
+    # sort the info based on the number of nodes
+    sorted_info = sorted(info.items(), key=operator.itemgetter(1))
+
+    if partition:
+        return (partition, info[partition])
+    else:
+        return sorted_info
+
+
+def ninfo(partition, n=None):
+
+    max_node = 0
+
+    cmd = ["mdiag", "-n", "-t", partition]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    out, err = p.communicate()
+
+    states = {}
+    r = re.compile('[a-z]+(?P<node>\d+)\s+(?P<state>Idle|Busy|Drained|Running|Down)')
+    for line in out.splitlines():
+        m = r.match(line)
+        if m:
+            states[int(m.group('node'))] = m.group('state')
+            max_node = max(max_node, int(m.group('node')))
+
+    # We have to branch here for the cases that we don't care
+    # about node ordering (i.e. bigmem)
+    if n:
+        data = [0] * n
+        i = 0
+        for value in states.itervalues():
+            if   value == 'Idle':
+                data[i] = 3 # curses.COLOR_GREEN
+                i += 1
+            elif value == 'Busy':
+                data[i] = 6 # curses.COLOR_YELLOW
+                i += 1
+            elif value == 'Drained':
+                data[i] = 1 # curses.COLOR_BLUE
+                i += 1
+            elif value == 'Running':
+                data[i] = 5 # curses.COLOR_RED
+                i += 1
+            elif value == 'Down':
+                data[i] = 7 # curses.COLOR_BLACK
+                i += 1
+    else:
+        data = [0] * max_node
+        for key, value in states.items():
+            if   value == 'Idle':
+                data[key -1] = 3 # curses.COLOR_GREEN
+            elif value == 'Busy':
+                data[key -1] = 6 # curses.COLOR_YELLOW
+            elif value == 'Drained':
+                data[key -1] = 1 # curses.COLOR_BLUE
+            elif value == 'Running':
+                data[key -1] = 5 # curses.COLOR_RED
+            elif value == 'Down':
+                data[key -1] = 7 # curses.COLOR_BLACK
+    return data
+
+def display(stdscr, pis):
+    y = 0
+    x = 0
+    dy = 0
+    dx = 0
+    for p in pis:
+        k = p[0]
+        v = p[1]
+        # silly special case since bigmem are really xjet nodes
+        if k == 'bigmem':
+            info  = ninfo(k, v['nodes'])
+        else:
+            info = ninfo(k)
+        y, x, dy, dx = pdisplay(stdscr, k, info, v, y, x, dy, dx)
+
+
+def pdisplay(stdscr, partition, info, stats, y0, x0, dy, dx):
+
+# Will create this sub window
+# +---------------------------------------+
+# | status                                |
+# | +-----------------------------------+ |
+# | |                                   | |
+# | +-----------------------------------+ |
+# +---------------------------------------+
+
+    # Status line
+    tnodes = stats['nodes']
+    unodes = stats['up']
+    sline = "%s [%d/%d]" %(partition, unodes, tnodes)
+
+    # Availble rows
+    border = 4 # 2 on each side
+
+    max_x = curses.COLS  -1
+    max_y = curses.LINES -1
+
+    need = tnodes + 4
+    have = max_x - x0 - dx
+    if need < have:
+        # can fit on line
+        same = 1
+    else:
+        same = 0
+
+    # Number of nodes per row and column
+    n_rows = (tnodes / (max_x - border)) +3
+    if n_rows > 3:
+        n_cols = max_x - 1
+    else:
+        n_cols = tnodes + 2
+
+    # Sub window size
+    rows = n_rows + 2
+    cols = max(n_cols + 2, len(sline) + 1)
+
+    # Sub window placement
+    if same:
+        y = y0
+        x = x0 + dx
+        if x0 != 0:
+            x += 1
+    else:
+        x = 0
+        y = y0 + dy -1
+
+    w = stdscr.subpad(rows, cols, y, x)
+    w.addstr(0, 0, sline)
+
+    s = w.derwin(n_rows, n_cols, 1,1)
+    s.border(0)
+    n_cols = n_cols - 2
+    for i in range(0, tnodes):
+        node_x = (i % n_cols) +1
+        node_y = (i / n_cols) +1
+        s.attrset(curses.color_pair(info[i]))
+        s.addstr(node_y, node_x, " ")
+    #stdscr.refresh(0, 0, y, x, rows, cols)
+
+
+    dy = rows
+    dx = cols
+    return (y, x, dy, dx)
+
+
+
+if __name__ == "__main__":
+    main()
+
+
