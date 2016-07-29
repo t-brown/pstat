@@ -256,16 +256,16 @@ def pdisplay(stdscr, partition, info, stats, y0, x0, dy, dx):
     n_rows -= 2
     stdscr.addstr(y, x, sline)
     stdscr.addch(y+1,        x,          curses.ACS_ULCORNER)
-    stdscr.hline(y+1,        x+1,        curses.ACS_HLINE, n_cols)
+    stdscr.hline(y+1,        x+1,        curses.ACS_HLINE, n_cols-2)
     stdscr.vline(y+2,        x,          curses.ACS_VLINE, n_rows)
-    stdscr.addch(y+1,        x+1+n_cols, curses.ACS_URCORNER)
+    stdscr.addch(y+1,        x+n_cols-1, curses.ACS_URCORNER)
     stdscr.addch(y+2+n_rows, x,          curses.ACS_LLCORNER)
-    stdscr.hline(y+2+n_rows, x+1,        curses.ACS_HLINE, n_cols)
-    stdscr.addch(y+2+n_rows, x+1+n_cols, curses.ACS_LRCORNER)
-    stdscr.vline(y+2,        x+1+n_cols, curses.ACS_VLINE, n_rows)
+    stdscr.hline(y+2+n_rows, x+1,        curses.ACS_HLINE, n_cols-2)
+    stdscr.addch(y+2+n_rows, x+n_cols-1, curses.ACS_LRCORNER)
+    stdscr.vline(y+2,        x+n_cols-1, curses.ACS_VLINE, n_rows)
     n_cols -= 2
     for i in range(0, tnodes):
-        node_x = (i % n_cols) +x +2
+        node_x = (i % n_cols) +x +1
         node_y = (i / n_cols) +y +2
         stdscr.attrset(curses.color_pair(info[i]))
         stdscr.addstr(node_y, node_x, " ")
