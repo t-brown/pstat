@@ -9,6 +9,7 @@ from __future__ import print_function
 
 import sys
 import os
+import signal
 import subprocess
 import re
 import operator
@@ -66,11 +67,18 @@ def parse_args():
     else:
         return None
 
+def sighdl(signal, frame):
+    sfini()
+    sys.exit(0)
+
 def sinit():
     stdscr = curses.initscr()
     curses.noecho()
     curses.cbreak()
     curses.curs_set(0)
+
+    # install a signal handler
+    signal.signal(signal.SIGINT, sighdl)
 
     # set up colors
     curses.start_color()
@@ -219,25 +227,22 @@ def pdisplay(stdscr, partition, info, stats, y0, x0, dy, dx):
     sline = "%s [%d/%d]" %(partition, unodes, tnodes)
 
     # Availble rows
-    border = 4 # 2 on each side
-
     max_x = curses.COLS  -1
     max_y = curses.LINES -1
 
-    need = tnodes + 4
     have = max_x - x0 - dx
-    if need < have:
+    if have > tnodes:
         # can fit on line
         same = 1
     else:
         same = 0
 
     # Number of nodes per row and column
-    n_rows = (tnodes / (max_x - border)) +3
+    n_rows = (tnodes/max_x) +3
     if n_rows > 3:
-        n_cols = max_x - 1
+        n_cols = max_x -1
     else:
-        n_cols = tnodes + 2
+        n_cols = tnodes
 
     # Sub window size
     rows = n_rows + 2
@@ -254,16 +259,17 @@ def pdisplay(stdscr, partition, info, stats, y0, x0, dy, dx):
         y = y0 + dy -1
 
     n_rows -= 2
+    n_cols += 1
     stdscr.addstr(y, x, sline)
-    stdscr.addch(y+1,        x,          curses.ACS_ULCORNER)
-    stdscr.hline(y+1,        x+1,        curses.ACS_HLINE, n_cols-2)
-    stdscr.vline(y+2,        x,          curses.ACS_VLINE, n_rows)
-    stdscr.addch(y+1,        x+n_cols-1, curses.ACS_URCORNER)
-    stdscr.addch(y+2+n_rows, x,          curses.ACS_LLCORNER)
-    stdscr.hline(y+2+n_rows, x+1,        curses.ACS_HLINE, n_cols-2)
-    stdscr.addch(y+2+n_rows, x+n_cols-1, curses.ACS_LRCORNER)
-    stdscr.vline(y+2,        x+n_cols-1, curses.ACS_VLINE, n_rows)
-    n_cols -= 2
+    stdscr.hline(y+1,        x+1,      curses.ACS_HLINE, n_cols)
+    stdscr.vline(y+2,        x,        curses.ACS_VLINE, n_rows)
+    stdscr.hline(y+2+n_rows, x+1,      curses.ACS_HLINE, n_cols)
+    stdscr.vline(y+2,        x+n_cols, curses.ACS_VLINE, n_rows)
+    stdscr.addch(y+1,        x,        curses.ACS_ULCORNER)
+    stdscr.addch(y+1,        x+n_cols, curses.ACS_URCORNER)
+    stdscr.addch(y+2+n_rows, x,        curses.ACS_LLCORNER)
+    stdscr.addch(y+2+n_rows, x+n_cols, curses.ACS_LRCORNER)
+    n_cols -= 1
     for i in range(0, tnodes):
         node_x = (i % n_cols) +x +1
         node_y = (i / n_cols) +y +2
