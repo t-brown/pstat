@@ -3,9 +3,7 @@
 # Script to visually display a partition 
 # node states.
 #
-# make `mdiag -n -t xjet` pretty
-
-from __future__ import print_function
+# make `sinfo -h` pretty
 
 import sys
 import os
@@ -56,6 +54,7 @@ def main():
             pos -= page
         pad.refresh(pos, 0, 0, 0, max_y, max_x)
         display(pad, pis)
+        time.sleep(2)
 
     sfini()
 
@@ -108,31 +107,19 @@ def sfini():
 
 def pinfo(partition=None):
 
-    cmd    = ["mdiag", "-P"]
+    cmd    = ["sinfo", "-h", "-s"]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = p.communicate()
 
     info = {}
-    begin = re.compile('Nodes ----')
-    end   = re.compile('^$')
-    part  = re.compile('(?P<partition>\S+)\s+(?P<nodes>\d+)\s+(?P<up>\d+)')
-    seen  = 0
-    nodes = 0
+    pre = re.compile('(?P<partition>[a-z-]+)\*?\s+\w+\s+\w+\s+(?P<up>\d+)/\d+/\d+/(?P<nodes>\d+)')
     for line in out.splitlines():
-        mb = begin.match(line)
-        if mb:
-            seen = 1
-        if seen:
-            mp = part.match(line)
-            if mp:
-                if mp.group('partition') != 'ALL':
-                    info[mp.group('partition')] = {
-                        'nodes': int(mp.group('nodes')),
-                        'up':    int(mp.group('up'))
-                        }
-        me = end.match(line)
-        if seen and me:
-            break
+        mp = pre.match(line)
+        if mp:
+            info[mp.group('partition')] = {
+                'nodes': int(mp.group('nodes')),
+                'up':    int(mp.group('up'))
+                }
 
     # sort the info based on the number of nodes
     sorted_info = sorted(info.items(), key=operator.itemgetter(1))
@@ -147,52 +134,30 @@ def ninfo(partition, n=None):
 
     max_node = 0
 
-    cmd = ["mdiag", "-n", "-t", partition]
+    cmd = ["sinfo", "-h", "-N", "-p", partition]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = p.communicate()
 
     states = {}
-    r = re.compile('[a-z]+(?P<node>\d+)\s+(?P<state>Idle|Busy|Drained|Running|Down)')
+    r = re.compile('[a-z]+(?P<node>\d+)\s+\d+\s+[a-z-]+\*?\s+(?P<state>\w+)\*?')
     for line in out.splitlines():
         m = r.match(line)
         if m:
             states[int(m.group('node'))] = m.group('state')
             max_node = max(max_node, int(m.group('node')))
 
-    # We have to branch here for the cases that we don't care
-    # about node ordering (i.e. bigmem)
-    if n:
-        data = [0] * n
-        i = 0
-        for value in states.itervalues():
-            if   value == 'Idle':
-                data[i] = 3 # curses.COLOR_GREEN
-                i += 1
-            elif value == 'Busy':
-                data[i] = 6 # curses.COLOR_YELLOW
-                i += 1
-            elif value == 'Drained':
-                data[i] = 1 # curses.COLOR_BLUE
-                i += 1
-            elif value == 'Running':
-                data[i] = 5 # curses.COLOR_RED
-                i += 1
-            elif value == 'Down':
-                data[i] = 7 # curses.COLOR_BLACK
-                i += 1
-    else:
-        data = [0] * max_node
-        for key, value in states.items():
-            if   value == 'Idle':
-                data[key -1] = 3 # curses.COLOR_GREEN
-            elif value == 'Busy':
-                data[key -1] = 6 # curses.COLOR_YELLOW
-            elif value == 'Drained':
-                data[key -1] = 1 # curses.COLOR_BLUE
-            elif value == 'Running':
-                data[key -1] = 5 # curses.COLOR_RED
-            elif value == 'Down':
-                data[key -1] = 7 # curses.COLOR_BLACK
+    data = [0] * (max_node +1)
+    for key, value in states.items():
+        if   value == 'idle':
+            data[key -1] = 3 # curses.COLOR_GREEN
+        elif value == 'comp':
+            data[key -1] = 6 # curses.COLOR_YELLOW
+        elif value == 'drain':
+            data[key -1] = 1 # curses.COLOR_BLUE
+        elif value == 'alloc':
+            data[key -1] = 5 # curses.COLOR_RED
+        else:
+            data[key -1] = 7 # curses.COLOR_BLACK
     return data
 
 def display(stdscr, pis):
@@ -203,11 +168,7 @@ def display(stdscr, pis):
     for p in pis:
         k = p[0]
         v = p[1]
-        # silly special case since bigmem are really xjet nodes
-        if k == 'bigmem':
-            info  = ninfo(k, v['nodes'])
-        else:
-            info = ninfo(k)
+        info = ninfo(k)
         y, x, dy, dx = pdisplay(stdscr, k, info, v, y, x, dy, dx)
 
 
