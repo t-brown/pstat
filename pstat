@@ -5,13 +5,13 @@
 #
 # make `sinfo -h` pretty
 
-import sys
+import curses
+import operator
 import os
+import re
 import signal
 import subprocess
-import re
-import operator
-import curses
+import sys
 import time
 
 def main():
@@ -112,7 +112,7 @@ def pinfo(partition=None):
     out, err = p.communicate()
 
     info = {}
-    pre = re.compile('(?P<partition>[a-z-]+)\*?\s+\w+\s+\w+\s+(?P<up>\d+)/\d+/\d+/(?P<nodes>\d+)')
+    pre = re.compile('(?P<partition>[A-Za-z0-9_-]+)\*?\s+up\s+\S+\s+(?P<up>\d+)/\d+/\d+/(?P<nodes>\d+)')
     for line in out.splitlines():
         mp = pre.match(line)
         if mp:
@@ -132,6 +132,7 @@ def pinfo(partition=None):
 
 def ninfo(partition, n=None):
 
+    min_node = 999999
     max_node = 0
 
     cmd = ["sinfo", "-h", "-N", "-p", partition]
@@ -139,25 +140,30 @@ def ninfo(partition, n=None):
     out, err = p.communicate()
 
     states = {}
-    r = re.compile('[a-z]+(?P<node>\d+)\s+\d+\s+[a-z-]+\*?\s+(?P<state>\w+)\*?')
+    r = re.compile('[a-z]+(?P<node>\d+)\s+\d+\s+[A-Za-z0-9_-]+\*?\s+(?P<state>\w+)\*?')
     for line in out.splitlines():
         m = r.match(line)
         if m:
             states[int(m.group('node'))] = m.group('state')
             max_node = max(max_node, int(m.group('node')))
+            min_node = min(min_node, int(m.group('node')))
 
-    data = [0] * (max_node +1)
+    n_nodes = max_node - min_node +1
+    data = [0] * n_nodes
     for key, value in states.items():
-        if   value == 'idle':
-            data[key -1] = 3 # curses.COLOR_GREEN
-        elif value == 'comp':
-            data[key -1] = 6 # curses.COLOR_YELLOW
+        n = key - min_node -1
+        if   value == 'comp':
+            data[n] = 1 # curses.COLOR_BLUE
         elif value == 'drain':
-            data[key -1] = 1 # curses.COLOR_BLUE
+            data[n] = 1 # curses.COLOR_BLUE
+        elif value == 'idle':
+            data[n] = 3 # curses.COLOR_GREEN
         elif value == 'alloc':
-            data[key -1] = 5 # curses.COLOR_RED
+            data[n] = 5 # curses.COLOR_RED
+        elif value == 'mix':
+            data[n] = 6 # curses.COLOR_YELLOW
         else:
-            data[key -1] = 7 # curses.COLOR_BLACK
+            data[n] = 7 # curses.COLOR_BLACK
     return data
 
 def display(stdscr, pis):
